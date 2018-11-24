@@ -1,0 +1,5 @@
+rootProject.name = 'nio-chat'
+include 'nio-client'
+include 'chat-model'
+include 'nio-server'
+
