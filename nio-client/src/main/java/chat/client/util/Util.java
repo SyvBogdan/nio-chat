@@ -6,6 +6,7 @@ import java.awt.*;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.net.SocketAddress;
 import java.net.URL;
 import java.nio.channels.SocketChannel;
 import java.nio.file.Paths;
@@ -46,6 +47,14 @@ public class Util {
             return true;
         } catch (IOException e) {
             return false;
+        }
+    }
+
+    public static InetSocketAddress getLocalAddress(final SocketChannel socketChannel){
+        try {
+           return (InetSocketAddress)socketChannel.getRemoteAddress();
+        } catch (IOException e) {
+           throw new RuntimeException(e);
         }
     }
 }

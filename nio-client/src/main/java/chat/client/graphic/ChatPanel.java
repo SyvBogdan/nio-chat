@@ -38,7 +38,7 @@ public class ChatPanel extends JPanel {
         c.gridx = 0;
         c.gridy = 0;
         // c.ipady =5;
-        c.insets = new Insets(0, 10, 10, 30);
+        c.insets = new Insets(0, 10, 10, 0);
         this.add(textField, c);
 
 
@@ -129,7 +129,7 @@ public class ChatPanel extends JPanel {
 
         final InputTextAreaListener inputTextAreaListener = new InputTextAreaListener(inputArea, chatClient);
         inputArea.addKeyListener(inputTextAreaListener);
-        userList.addMouseListener(new UserListMouseListener(inputTextAreaListener));
+        userList.addMouseListener(new UserListMouseListener(inputTextAreaListener, chatClient));
 
         chatClient.setOutPutTextArea(textArea);
         chatClient.setGraphicList(model);

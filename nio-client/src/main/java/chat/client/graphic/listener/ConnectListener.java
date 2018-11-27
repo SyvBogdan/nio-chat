@@ -9,6 +9,7 @@ import java.awt.event.MouseListener;
 
 import static chat.client.graphic.listener.UserFieldListener.DEFAULT_TEXT;
 import static chat.client.graphic.listener.UserFieldListener.EMPTY;
+import static chat.client.util.Util.getLocalAddress;
 
 public class ConnectListener implements MouseListener {
 
@@ -26,12 +27,28 @@ public class ConnectListener implements MouseListener {
 
     @Override
     public void mouseClicked(final MouseEvent e) {
+        if (e.getComponent().isEnabled()) {
+            final String login = textField.getText();
+            if (login.equals(EMPTY) || login.equals(DEFAULT_TEXT)) {
+                textArea.append("Please, write your username\n");
+            } else {
+                boolean result = chatClient.startClient(login);
+                if (result) {
 
-        final String login = textField.getText();
-        if (login.equals(EMPTY) || login.equals(DEFAULT_TEXT)) {
-            textArea.append("Please, write your username\n");
-        } else {
-            chatClient.startClient(login);
+                    final String ip = getLocalAddress(chatClient.getSocketChannel()).getHostString();
+                    e.getComponent().setEnabled(false);
+
+                    final String user = textField.getText();
+
+                    textField.setText(user + "(" + ip + ")");
+
+                    textField.setEditable(false);
+                    textField.setSelectedTextColor(Color.BLACK);
+                    textField.setFont(new Font("Verdana", Font.BOLD, 10));
+                    textField.setBackground(Color.WHITE);
+                }
+                ;
+            }
         }
     }
 
@@ -54,4 +71,6 @@ public class ConnectListener implements MouseListener {
     public void mouseExited(MouseEvent e) {
 
     }
+
+
 }

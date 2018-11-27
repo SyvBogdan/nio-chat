@@ -1,25 +1,21 @@
 package chat.client.model;
 
 
-
 import chat.model.Message;
 import chat.model.User;
-import com.fasterxml.jackson.databind.ObjectMapper;
 
 import javax.swing.*;
 import java.awt.*;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.ObjectInputStream;
-import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.SocketChannel;
-import java.util.Iterator;
+import java.util.*;
 import java.util.List;
-import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static chat.client.util.Util.findAvailablePort;
@@ -27,7 +23,11 @@ import static chat.client.util.Util.findAvailablePort;
 
 public class ChatClient {
 
+    private static Object obj = new Object();
+
     private User myUser;
+
+    private User activeUser;
 
     public User getLocalUser() {
         return myUser;
@@ -37,16 +37,21 @@ public class ChatClient {
 
     private Selector selector;
 
+    private SocketChannel socketChannel;
+
     private ConcurrentHashMap<String, User> userMap = new ConcurrentHashMap<>();
 
     private MessageWriter messageWriter;
 
     private TextArea outPutTextArea;
 
-    public void startClient(final String userName) {
+    private List<String> generalInfo = new LinkedList<>();
+
+    public boolean startClient(final String userName) {
 
         try {
             final SocketChannel socketChannel = openConnection();
+            this.socketChannel = socketChannel;
             selector = Selector.open();
             socketChannel.register(selector, SelectionKey.OP_CONNECT | SelectionKey.OP_READ | SelectionKey.OP_WRITE);
 
@@ -58,8 +63,12 @@ public class ChatClient {
 
             new Thread(this::startServerListening).start();
 
+            return true;
+
         } catch (Throwable e) {
-            outPutTextArea.append(e.getMessage());
+            generalInfo.add(e.toString());
+            if (activeUser == null) outPutTextArea.append(e.toString());
+            return false;
         }
     }
 
@@ -90,20 +99,20 @@ public class ChatClient {
                         handleRead(currentKey);
                     }
 
-                    if(currentKey.isWritable()){
+                    if (currentKey.isWritable()) {
                         currentKey.interestOps(SelectionKey.OP_READ);
                     }
 
                 }
             }
         } catch (Exception e) {
-            outPutTextArea.append(e.getMessage());
+            generalInfo.add(e.toString());
+            if (activeUser == null) outPutTextArea.append("Eception in nestedloop " + e);
         }
     }
 
     @SuppressWarnings("unchecked")
     private void handleRead(final SelectionKey key) throws IOException {
-        System.out.println("InputMessage");
 
         final SocketChannel socketChannel = (SocketChannel) key.channel();
 
@@ -128,37 +137,50 @@ public class ChatClient {
 
         if (message instanceof User) {
 
-            final User user = (User) message;
-            if (user.isConnected()) {
+            User user = null;
+            try {
 
-                if (user.equals(myUser)) {
-                    outPutTextArea.append("I am connected :)\n");
-                } else {
-                    graphicList.add(graphicList.getSize(), user.getUserName());
-                    userMap.put(user.getUserName(), user);
-                    outPutTextArea.append("User was connected: " + user.getUserName() + "\n");
+                user = (User) message;
+                if (user.isConnected()) {
+
+                    if (user.equals(myUser)) {
+                        final String status = "I am connected :)\n";
+                        generalInfo.add(status);
+                        if (activeUser == null) outPutTextArea.append(status);
+                    } else {
+                        graphicList.add(graphicList.getSize(), user.getUserName());
+                        user.setUserChatHistory(new LinkedList<>());
+                        userMap.put(user.getUserName(), user);
+                        final String statusUser = "User was connected: " + user.getUserName() + "\n";
+                        generalInfo.add(statusUser);
+                        if (activeUser == null) outPutTextArea.append(statusUser);
+                    }
                 }
-
+                return;
+            } catch (Exception e) {
+                System.out.println("Exception when get message from user:" + user.getUserName());
             }
-
-            return;
         }
 
         if (message instanceof List) {
             System.out.println("list of users has arrived");
             List<User> availableUsers = (List<User>) message;
             availableUsers.forEach(user -> {
+                user.setUserChatHistory(new LinkedList<>());
                 graphicList.add(graphicList.getSize(), user.getUserName());
                 userMap.put(user.getUserName(), user);
             });
         }
 
         if (message instanceof Message) {
+            System.out.println("InputMessage");
             final Message msg = (Message) message;
+            final String outMsgPattern = msg.getFrom() + ": " + msg.getMessage() + "\n";
+            final User sender = userMap.get(msg.getFrom());
+            sender.getUserChatHistory().add(outMsgPattern);
 
-            System.out.println(msg);
-            outPutTextArea.append(msg.getFrom() + ": " + msg.getMessage() + "\n");
-
+            System.out.println("activeUser has got message:" + activeUser);
+            if (activeUser != null && Objects.equals(sender, activeUser)) outPutTextArea.append(outMsgPattern);
         }
     }
 
@@ -175,8 +197,7 @@ public class ChatClient {
     private static SocketChannel openConnection() throws IOException {
 
         final SocketChannel socketChannel = SocketChannel.open();
-
-        socketChannel.bind(new InetSocketAddress(InetAddress.getLocalHost().getHostAddress(), findAvailablePort()));
+        socketChannel.bind(new InetSocketAddress("0.0.0.0", findAvailablePort()));
         socketChannel.connect(new InetSocketAddress("176.37.243.58", 9999));
         socketChannel.configureBlocking(false);
 
@@ -191,7 +212,9 @@ public class ChatClient {
     }
 
     public TextArea getOutPutTextArea() {
-        return outPutTextArea;
+        synchronized (obj) {
+            return outPutTextArea;
+        }
     }
 
     public void setGraphicList(DefaultListModel<String> graphicList) {
@@ -202,5 +225,24 @@ public class ChatClient {
         return messageWriter;
     }
 
+    public ConcurrentHashMap<String, User> getUserMap() {
+        return userMap;
+    }
+
+    public User getActiveUser() {
+        return activeUser;
+    }
+
+    public void setActiveUser(User activeUser) {
+        this.activeUser = activeUser;
+    }
+
+    public List<String> getGeneralInfo() {
+        return generalInfo;
+    }
+
+    public SocketChannel getSocketChannel() {
+        return socketChannel;
+    }
 }
 

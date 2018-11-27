@@ -6,6 +6,7 @@ import chat.model.Message;
 import java.awt.*;
 import java.awt.event.KeyEvent;
 import java.awt.event.KeyListener;
+import java.util.Objects;
 
 public class InputTextAreaListener implements KeyListener {
 
@@ -17,7 +18,10 @@ public class InputTextAreaListener implements KeyListener {
     }
 
     public void setTo(String to) {
-        this.to = to;
+        if (!Objects.isNull(to)) {
+            chatClient.setActiveUser(chatClient.getUserMap().get(to));
+            this.to = to;
+        }
     }
 
     private String to;
@@ -36,16 +40,18 @@ public class InputTextAreaListener implements KeyListener {
     public void keyPressed(KeyEvent e) {
 
         if (e.getKeyCode() == KeyEvent.VK_ENTER) {
-
             final String text = inputTextArea.getText();
-
             if (to == null) {
                 System.out.println("Receiver can't be null");
                 return;
             }
-
             final Message message = new Message(chatClient.getLocalUser().getUserName(), to, text);
+            final String raw = "From me" + ": " + text + "\n";
+            chatClient.getActiveUser().getUserChatHistory().add(raw);
+            chatClient.getOutPutTextArea().append(raw);
             chatClient.getMessageWriter().writeToServer(message);
+
+            inputTextArea.setText("");
         }
     }
 

@@ -34,6 +34,10 @@ public class User implements Serializable {
         return userChatHistory;
     }
 
+    public void setUserChatHistory(List<String> userChatHistory) {
+        this.userChatHistory = userChatHistory;
+    }
+
     public String getIp() {
         return socketAddress.getHostName();
     }
