@@ -1,9 +1,6 @@
 package chat.client.graphic;
 
-import chat.client.graphic.listener.ConnectListener;
-import chat.client.graphic.listener.InputTextAreaListener;
-import chat.client.graphic.listener.UserFieldListener;
-import chat.client.graphic.listener.UserListMouseListener;
+import chat.client.graphic.listener.*;
 import chat.client.model.ChatClient;
 
 import javax.swing.*;
@@ -98,14 +95,14 @@ public class ChatPanel extends JPanel {
         this.add(textAreaScrollPane1, c);
 
         //add button to send
-        final JButton button = new JButton("Send");
+        final JButton sendButton = new JButton("Send");
         c.fill = GridBagConstraints.HORIZONTAL;
         c.weightx = 0.5;
         c.gridx = 0;
         c.gridy = 2;
         c.ipady = 30;
         c.insets = new Insets(10, 0, 0, 0);
-        this.add(button, c);
+        this.add(sendButton, c);
 
         //add Input Panel
 
@@ -125,11 +122,15 @@ public class ChatPanel extends JPanel {
         ///listeners
 
         textField.addMouseListener(new UserFieldListener(textField));
-        conButton.addMouseListener(new ConnectListener(chatClient, textField, textArea));
+        conButton.addMouseListener(new ConnectListener(chatClient, textField, textArea, disConButton));
+        disConButton.addMouseListener(new DisconnectListener(chatClient, textField, textArea, conButton));
 
         final InputTextAreaListener inputTextAreaListener = new InputTextAreaListener(inputArea, chatClient);
         inputArea.addKeyListener(inputTextAreaListener);
-        userList.addMouseListener(new UserListMouseListener(inputTextAreaListener, chatClient));
+
+        final SendListener sendListener = new SendListener(inputArea, chatClient);
+        sendButton.addMouseListener(sendListener);
+        userList.addMouseListener(new UserListMouseListener(inputTextAreaListener, sendListener  , chatClient));
 
         chatClient.setOutPutTextArea(textArea);
         chatClient.setGraphicList(model);

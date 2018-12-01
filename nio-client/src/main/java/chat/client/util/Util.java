@@ -52,7 +52,7 @@ public class Util {
 
     public static InetSocketAddress getLocalAddress(final SocketChannel socketChannel){
         try {
-           return (InetSocketAddress)socketChannel.getRemoteAddress();
+           return (InetSocketAddress)socketChannel.getLocalAddress();
         } catch (IOException e) {
            throw new RuntimeException(e);
         }

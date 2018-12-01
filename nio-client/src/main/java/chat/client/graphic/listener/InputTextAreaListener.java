@@ -8,10 +8,11 @@ import java.awt.event.KeyEvent;
 import java.awt.event.KeyListener;
 import java.util.Objects;
 
-public class InputTextAreaListener implements KeyListener {
+public class InputTextAreaListener implements KeyListener, Writable {
 
     private final TextArea inputTextArea;
     private final ChatClient chatClient;
+    private String to;
 
     public String getTo() {
         return to;
@@ -23,8 +24,6 @@ public class InputTextAreaListener implements KeyListener {
             this.to = to;
         }
     }
-
-    private String to;
 
     public InputTextAreaListener(TextArea textArea, ChatClient chatClient) {
         this.inputTextArea = textArea;
@@ -38,24 +37,14 @@ public class InputTextAreaListener implements KeyListener {
 
     @Override
     public void keyPressed(KeyEvent e) {
-
         if (e.getKeyCode() == KeyEvent.VK_ENTER) {
-            final String text = inputTextArea.getText();
-            if (to == null) {
-                System.out.println("Receiver can't be null");
-                return;
-            }
-            final Message message = new Message(chatClient.getLocalUser().getUserName(), to, text);
-            final String raw = "From me" + ": " + text + "\n";
-            chatClient.getActiveUser().getUserChatHistory().add(raw);
-            chatClient.getOutPutTextArea().append(raw);
-            chatClient.getMessageWriter().writeToServer(message);
-
-            inputTextArea.setText("");
+            pushMessage(to, inputTextArea, chatClient);
         }
     }
 
     @Override
     public void keyReleased(KeyEvent e) {
+
     }
+
 }

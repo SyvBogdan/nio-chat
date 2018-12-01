@@ -104,7 +104,7 @@ public class ChatServer implements IChatServer, Runnable {
                 final InetSocketAddress clientAddress = (InetSocketAddress) clientChannel.getRemoteAddress();
 
                 //clientMap.put(getAddress(clientAddress), clientChannel);
-                clientChannel.register(serverSelector, SelectionKey.OP_READ, getAddress(clientAddress));
+                clientChannel.register(serverSelector, SelectionKey.OP_READ, null);
 
                 System.out.println("Channel with address: " + getAddress(clientAddress) + " was successfully accepted.");
             } catch (IOException e) {
@@ -127,12 +127,17 @@ public class ChatServer implements IChatServer, Runnable {
             final byte[] arrByte = new byte[buf.limit()];
             buf.get(arrByte);
 
+            if (arrByte.length == 0) {
+                skipConnection(key, socketChannel);
+                return;
+            }
+
             ByteArrayInputStream in = new ByteArrayInputStream(arrByte);
             ObjectInputStream is = new ObjectInputStream(in);
             message = is.readObject();
 
             //process message after deserialization
-            provideMessageLogic(message, socketChannel);
+            provideMessageLogic(message, socketChannel, key);
 
         } catch (Exception e) {
             if (socketChannel.isConnected()) {
@@ -150,7 +155,26 @@ public class ChatServer implements IChatServer, Runnable {
         }
     }
 
-    private void provideMessageLogic(final Object message, final SocketChannel socketChannel) {
+    private void skipConnection(final SelectionKey key ,final SocketChannel socketChannel){
+
+       if (socketChannel.isOpen()) {
+           try {
+
+              final String username = (String) key.attachment();
+               final UserProfile profile = clientMap.get(username);
+
+               final User unActiveUser = profile.getUser();
+               unActiveUser.setConnected(false);
+               clientMap.remove(username);
+               clientMap.forEach((evUser, prf) -> writeToClientAsync(unActiveUser, prf.getUserChannel()));
+               socketChannel.close();
+           } catch (IOException e) {
+               e.printStackTrace();
+           }
+       }
+    }
+
+    private void provideMessageLogic(final Object message, final SocketChannel socketChannel, final SelectionKey key) {
 
         if (message instanceof Message) {
             final Message msg = (Message) message;
@@ -166,6 +190,7 @@ public class ChatServer implements IChatServer, Runnable {
             System.out.println(user);
 
             if (clientMap.get(user.getUserName()) == null) {
+                key.attach(user.getUserName());
                 clientMap.put(user.getUserName(), new UserProfile(user, socketChannel));
                 user.setConnected(true);
                 clientMap.forEach((usr, profile) -> writeToClientAsync(user, profile.getUserChannel()));

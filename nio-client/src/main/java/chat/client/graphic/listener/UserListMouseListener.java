@@ -14,11 +14,14 @@ public class UserListMouseListener implements MouseListener {
 
     private final InputTextAreaListener inputWriteListener;
 
+    private final SendListener sendListener;
+
     private final ChatClient chatClient;
 
-    public UserListMouseListener(InputTextAreaListener inputWriteListener, ChatClient chatClient) {
+    public UserListMouseListener(InputTextAreaListener inputWriteListener, SendListener sendListener ,ChatClient chatClient) {
         this.inputWriteListener = inputWriteListener;
         this.chatClient = chatClient;
+        this.sendListener = sendListener;
     }
 
     @Override
@@ -27,6 +30,7 @@ public class UserListMouseListener implements MouseListener {
         int index = list.locationToIndex(e.getPoint());
         final String destUser = list.getModel().getElementAt(index);
         inputWriteListener.setTo(destUser);
+        sendListener.setTo(destUser);
 
         final User activeUser = chatClient.getActiveUser();
         final TextArea textArea = chatClient.getOutPutTextArea();

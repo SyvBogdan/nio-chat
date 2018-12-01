@@ -10,6 +10,7 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.net.InetSocketAddress;
+import java.net.Socket;
 import java.nio.ByteBuffer;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
@@ -17,13 +18,14 @@ import java.nio.channels.SocketChannel;
 import java.util.*;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 import static chat.client.util.Util.findAvailablePort;
 
 
 public class ChatClient {
-
-    private static Object obj = new Object();
 
     private User myUser;
 
@@ -46,6 +48,8 @@ public class ChatClient {
     private TextArea outPutTextArea;
 
     private List<String> generalInfo = new LinkedList<>();
+
+    private AtomicBoolean atomicBoolean = new AtomicBoolean(true);
 
     public boolean startClient(final String userName) {
 
@@ -75,12 +79,16 @@ public class ChatClient {
     private void startServerListening() {
 
         try {
+            atomicBoolean.set(true);
 
-            while (!Thread.interrupted()) {
+            //synhronized condition to be sure we can continue listening before selector could bw stopped
+            while (atomicBoolean.get()) {
+
                 final int readyChannels = selector.selectNow();
-                if (readyChannels == 0) {
-                    continue;
-                }
+                if (readyChannels == 0) continue;
+
+                if (!selector.isOpen()) return;
+
                 final Set<SelectionKey> keySet = selector.selectedKeys();
                 final Iterator<SelectionKey> keyIterator = keySet.iterator();
 
@@ -92,7 +100,6 @@ public class ChatClient {
                         continue;
                     }
                     if (currentKey.isConnectable()) {
-                        System.out.println("I'm connected to the server!");
                         handleConnectable(currentKey);
                     }
                     if (currentKey.isReadable()) {
@@ -107,7 +114,7 @@ public class ChatClient {
             }
         } catch (Exception e) {
             generalInfo.add(e.toString());
-            if (activeUser == null) outPutTextArea.append("Eception in nestedloop " + e);
+            if (activeUser == null) outPutTextArea.append("Exception in nestedloop " + e);
         }
     }
 
@@ -155,6 +162,11 @@ public class ChatClient {
                         generalInfo.add(statusUser);
                         if (activeUser == null) outPutTextArea.append(statusUser);
                     }
+                } else {
+                    final String disconnectStatus = String.format("User was disconnected: %s", user.getUserName()+ "\n");
+                    userMap.remove(user.getUserName());
+                    generalInfo.add(disconnectStatus);
+                    graphicList.removeElement(user.getUserName());
                 }
                 return;
             } catch (Exception e) {
@@ -163,7 +175,6 @@ public class ChatClient {
         }
 
         if (message instanceof List) {
-            System.out.println("list of users has arrived");
             List<User> availableUsers = (List<User>) message;
             availableUsers.forEach(user -> {
                 user.setUserChatHistory(new LinkedList<>());
@@ -173,13 +184,10 @@ public class ChatClient {
         }
 
         if (message instanceof Message) {
-            System.out.println("InputMessage");
             final Message msg = (Message) message;
             final String outMsgPattern = msg.getFrom() + ": " + msg.getMessage() + "\n";
             final User sender = userMap.get(msg.getFrom());
             sender.getUserChatHistory().add(outMsgPattern);
-
-            System.out.println("activeUser has got message:" + activeUser);
             if (activeUser != null && Objects.equals(sender, activeUser)) outPutTextArea.append(outMsgPattern);
         }
     }
@@ -197,7 +205,6 @@ public class ChatClient {
     private static SocketChannel openConnection() throws IOException {
 
         final SocketChannel socketChannel = SocketChannel.open();
-        socketChannel.bind(new InetSocketAddress("0.0.0.0", findAvailablePort()));
         socketChannel.connect(new InetSocketAddress("176.37.243.58", 9999));
         socketChannel.configureBlocking(false);
 
@@ -207,14 +214,40 @@ public class ChatClient {
         return socketChannel;
     }
 
+    public void closeConnection() {
+        try {
+            atomicBoolean.set(false);
+            if (socketChannel.isConnected()) this.socketChannel.close();
+            final Socket socket = socketChannel.socket();
+            if (!socket.isClosed()) {
+                socket.close();
+            }
+            cleanClient();
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        System.out.println("closed connection");
+    }
+
+    public void cleanClient() throws IOException {
+        this.selector.close();
+        this.socketChannel = null;
+        this.myUser = null;
+        this.activeUser = null;
+        this.generalInfo.clear();
+        this.graphicList.clear();
+        graphicList.add(0,"Available users:");
+        this.outPutTextArea.setText("");
+        this.getUserMap().clear();
+    }
+
     public void setOutPutTextArea(TextArea outPutTextArea) {
         this.outPutTextArea = outPutTextArea;
     }
 
     public TextArea getOutPutTextArea() {
-        synchronized (obj) {
             return outPutTextArea;
-        }
     }
 
     public void setGraphicList(DefaultListModel<String> graphicList) {

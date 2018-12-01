@@ -19,10 +19,13 @@ public class ConnectListener implements MouseListener {
 
     private final TextArea textArea;
 
-    public ConnectListener(ChatClient chatClient, JTextField textField, TextArea textArea) {
+    private final JButton disconnectButton;
+
+    public ConnectListener(ChatClient chatClient, JTextField textField, TextArea textArea, JButton disconnectButton) {
         this.chatClient = chatClient;
         this.textField = textField;
         this.textArea = textArea;
+        this.disconnectButton = disconnectButton;
     }
 
     @Override
@@ -35,8 +38,8 @@ public class ConnectListener implements MouseListener {
                 boolean result = chatClient.startClient(login);
                 if (result) {
 
-                    final String ip = getLocalAddress(chatClient.getSocketChannel()).getHostString();
-                    e.getComponent().setEnabled(false);
+                    final String ip = getLocalAddress(chatClient.getSocketChannel()).getAddress().toString().replace("/","");
+
 
                     final String user = textField.getText();
 
@@ -46,8 +49,9 @@ public class ConnectListener implements MouseListener {
                     textField.setSelectedTextColor(Color.BLACK);
                     textField.setFont(new Font("Verdana", Font.BOLD, 10));
                     textField.setBackground(Color.WHITE);
+                    e.getComponent().setEnabled(false);
+                    disconnectButton.setEnabled(true);
                 }
-                ;
             }
         }
     }
