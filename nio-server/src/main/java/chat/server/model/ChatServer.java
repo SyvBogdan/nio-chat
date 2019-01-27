@@ -15,6 +15,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
 import static chat.server.util.ServerHelper.getAddress;
@@ -74,12 +75,16 @@ public class ChatServer implements IChatServer, Runnable {
 
                 if (!key.isValid() && key.channel().isRegistered()) continue;
 
-                if (key.isAcceptable()) {
+                if (key.isValid() && key.isAcceptable()) {
                     handleAcceptClientEvent(key);
                 }
-                if (key.isReadable()) {
+                if (key.isValid() && key.isReadable()) {
                     handleRead(key);
                 }
+                if (key.isValid() && key.isWritable()) {
+                    handleWrite(key);
+                }
+
                 /*
                  * drop used operation from Set and it seems to be finished after this for server logic
                  * we have to remove it ourselves because when this SelectionKey will generate another event
@@ -103,8 +108,7 @@ public class ChatServer implements IChatServer, Runnable {
                 clientChannel.configureBlocking(false);
                 final InetSocketAddress clientAddress = (InetSocketAddress) clientChannel.getRemoteAddress();
 
-                //clientMap.put(getAddress(clientAddress), clientChannel);
-                clientChannel.register(serverSelector, SelectionKey.OP_READ, null);
+                clientChannel.register(serverSelector, SelectionKey.OP_READ | SelectionKey.OP_WRITE, null);
 
                 System.out.println("Channel with address: " + getAddress(clientAddress) + " was successfully accepted.");
             } catch (IOException e) {
@@ -139,6 +143,8 @@ public class ChatServer implements IChatServer, Runnable {
             //process message after deserialization
             provideMessageLogic(message, socketChannel, key);
 
+            key.interestOps(SelectionKey.OP_READ);
+
         } catch (Exception e) {
             if (socketChannel.isConnected()) {
                 try {
@@ -155,32 +161,32 @@ public class ChatServer implements IChatServer, Runnable {
         }
     }
 
-    private void skipConnection(final SelectionKey key ,final SocketChannel socketChannel){
+    private void skipConnection(final SelectionKey key, final SocketChannel socketChannel) {
 
-       if (socketChannel.isOpen()) {
-           try {
+        if (socketChannel.isOpen()) {
+            try {
 
-              final String username = (String) key.attachment();
-               final UserProfile profile = clientMap.get(username);
+                final String username = (String) key.attachment();
+                final UserProfile profile = clientMap.get(username);
 
-               final User unActiveUser = profile.getUser();
-               unActiveUser.setConnected(false);
-               clientMap.remove(username);
-               clientMap.forEach((evUser, prf) -> writeToClientAsync(unActiveUser, prf.getUserChannel()));
-               socketChannel.close();
-           } catch (IOException e) {
-               e.printStackTrace();
-           }
-       }
+                final User unActiveUser = profile.getUser();
+                unActiveUser.setConnected(false);
+                clientMap.remove(username);
+                clientMap.forEach((evUser, prf) -> pendingForSend(unActiveUser, prf.getUser().getUserName()));
+                socketChannel.close();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
     }
 
-    private void provideMessageLogic(final Object message, final SocketChannel socketChannel, final SelectionKey key) {
+    private void provideMessageLogic(final Object message, final SocketChannel socketChannel, final SelectionKey key) throws InterruptedException {
 
         if (message instanceof Message) {
             final Message msg = (Message) message;
 
             final UserProfile userProfile = clientMap.get(msg.getTo());
-            writeToClientAsync(msg, userProfile.getUserChannel());
+            pendingForSend(msg, userProfile.getUser().getUserName());
             return;
         }
 
@@ -192,31 +198,38 @@ public class ChatServer implements IChatServer, Runnable {
             if (clientMap.get(user.getUserName()) == null) {
                 key.attach(user.getUserName());
                 clientMap.put(user.getUserName(), new UserProfile(user, socketChannel));
-                user.setConnected(true);
-                clientMap.forEach((usr, profile) -> writeToClientAsync(user, profile.getUserChannel()));
 
+                // change state that user is ready for work
+                user.setConnected(true);
+
+                clientMap.forEach((usr, profile) -> pendingForSend(user, profile.getUser().getUserName()));
                 final List<User> availableUsers = clientMap.entrySet().stream()
                         .filter(us -> !us.getValue().getUser().equals(user))
                         .map(entry -> entry.getValue().getUser()).collect(Collectors.toList());
 
                 System.out.println("write to user: " + user + " all available users " + availableUsers);
-                writeToClientAsync(availableUsers, socketChannel);
+                pendingForSend(availableUsers, user.getUserName());
 
             } else {
-                writeToClientAsync(user, socketChannel);
+                pendingForSend(user, user.getUserName());
             }
         }
     }
 
-    private void writeToClientAsync(final Object message, final SocketChannel socketChannel) {
+    private void pendingForSend(final Object message, final String receiver) {
+        final UserProfile userProfile = clientMap.get(receiver);
+        if (userProfile != null)
+            userProfile.getPendingForSend().add(message);
+    }
 
-        CompletableFuture.runAsync(
+    private CompletableFuture<Void> writeToClientAsync(final Object message, final SocketChannel socketChannel) {
+
+        return CompletableFuture.runAsync(
                 () -> {
                     final ByteArrayOutputStream out = new ByteArrayOutputStream();
                     try (ObjectOutputStream os = new ObjectOutputStream(out)) {
                         os.writeObject(message);
                         socketChannel.write(ByteBuffer.wrap(out.toByteArray()));
-                        handleWrite(socketChannel.keyFor(serverSelector));
 
                     } catch (IOException e) {
                         throw new RuntimeException(e);
@@ -228,7 +241,26 @@ public class ChatServer implements IChatServer, Runnable {
 
     @Override
     public void handleWrite(SelectionKey key) {
-        key.interestOps(SelectionKey.OP_READ);
-    }
+        final String userToWrite = (String) key.attachment();
+        if (userToWrite != null) {
+            final UserProfile userProfile = clientMap.get(userToWrite);
+            final Object message = userProfile.getPendingForSend().poll();
+            if (message != null) {
+                System.out.println("Sending message " + message + " to :" + userProfile.getUser().getUserName());
 
+                final AtomicBoolean readyToSend = userProfile.getReadyForNextSend();
+                while (true) {
+                    if (readyToSend.get()) {
+                        readyToSend.set(false);
+                        writeToClientAsync(message, userProfile.getUserChannel())
+                                .thenRun(() -> {
+                                    key.interestOps(SelectionKey.OP_READ | SelectionKey.OP_WRITE);
+                                    readyToSend.set(true);
+                                });
+                        return;
+                    }
+                }
+            }
+        }
+    }
 }

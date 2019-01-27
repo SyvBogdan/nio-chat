@@ -75,4 +75,12 @@ public class User implements Serializable {
     public int hashCode() {
         return Objects.hash(userName, socketAddress);
     }
+
+
+    @Override
+    public String toString() {
+        return "User{" +
+                "userName='" + userName + '\'' +
+                '}';
+    }
 }
