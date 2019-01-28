@@ -51,6 +51,10 @@ public class ChatServer implements IChatServer, Runnable {
         new Thread(this).start();
     }
 
+
+    // legendary main loop in any Event-like model
+    // only one thread control everything in one node
+    // selector is invoking buy this thread retrieve SelectionKeySet giving us fire Event on any read/write/accept operation
     @Override
     public void run() {
 
@@ -108,7 +112,7 @@ public class ChatServer implements IChatServer, Runnable {
                 clientChannel.configureBlocking(false);
                 final InetSocketAddress clientAddress = (InetSocketAddress) clientChannel.getRemoteAddress();
 
-                clientChannel.register(serverSelector, SelectionKey.OP_READ | SelectionKey.OP_WRITE, null);
+                clientChannel.register(serverSelector, SelectionKey.OP_READ | SelectionKey.OP_WRITE);
 
                 System.out.println("Channel with address: " + getAddress(clientAddress) + " was successfully accepted.");
             } catch (IOException e) {
@@ -117,6 +121,8 @@ public class ChatServer implements IChatServer, Runnable {
         }
     }
 
+    // when client channel is ready to read from him he signalixe to selector
+    // and retrieve selection key to process reading
     @Override
     public void handleRead(SelectionKey key) {
 
@@ -143,7 +149,7 @@ public class ChatServer implements IChatServer, Runnable {
             //process message after deserialization
             provideMessageLogic(message, socketChannel, key);
 
-            key.interestOps(SelectionKey.OP_READ);
+            key.interestOps(SelectionKey.OP_READ | SelectionKey.OP_WRITE);
 
         } catch (Exception e) {
             if (socketChannel.isConnected()) {
@@ -161,6 +167,7 @@ public class ChatServer implements IChatServer, Runnable {
         }
     }
 
+    // right skipping of any connections
     private void skipConnection(final SelectionKey key, final SocketChannel socketChannel) {
 
         if (socketChannel.isOpen()) {
@@ -216,12 +223,16 @@ public class ChatServer implements IChatServer, Runnable {
         }
     }
 
+    // we create queue for any channel to send for it
+    // this was done to control writing in right order and process messages without merging them together in one message
+    // for client
     private void pendingForSend(final Object message, final String receiver) {
         final UserProfile userProfile = clientMap.get(receiver);
         if (userProfile != null)
             userProfile.getPendingForSend().add(message);
     }
 
+    // any task for server after operation read
     private CompletableFuture<Void> writeToClientAsync(final Object message, final SocketChannel socketChannel) {
 
         return CompletableFuture.runAsync(
@@ -239,6 +250,7 @@ public class ChatServer implements IChatServer, Runnable {
         );
     }
 
+    // handle event when particular channel is ready to write in next info
     @Override
     public void handleWrite(SelectionKey key) {
         final String userToWrite = (String) key.attachment();
